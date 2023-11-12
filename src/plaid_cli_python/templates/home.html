@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#712cf9" />
+    <title>Plaid Account Linker</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.3/jquery.min.js"></script>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+
+    
+  </head>
+
+  <body>
+    <main>
+      <h2>Link a Financial Institution</h2>
+      <button
+        type="button"
+        id="link-account"
+        class="btn btn-primary btn-lg px-4"
+      >
+        Link with Plaid
+      </button>
+      <pre id="response" style="font-size: 14px"></pre>
+    </main>
+  </body>
+  <script defer>
+    (async ($) => {
+      const existing_token = "";
+      // existing_token replaced by python string template
+      const existingToken = `${existing_token}`;
+      const linkButton = document.getElementById("link-account");
+      console.log(existingToken)
+      if(existingToken) {
+          linkButton.textContent = 'Relink with Plaid'
+      }
+      // Grab a Link token to initialize Link
+      const createLinkToken = async () => {
+        const res = await fetch("/api/create-link-token");
+        const data = await res.json();
+        return data.link_token;
+      };
+
+      // Initialize Link
+      const handler = Plaid.create({
+        token: await createLinkToken(),
+        onSuccess: async (publicToken, metadata) => {
+          console.log("Received public token: " + publicToken);
+          if (!existingToken) {
+            await fetch("/api/exchange-public-token", {
+              method: "POST",
+              body: JSON.stringify({
+                public_token: publicToken,
+              }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }).then((response) => {
+              const headline = document.getElementById("headline");
+              headline.textContent =
+                "You have successfully linked your account with Plaid2QIF";
+              const button = document.getElementById("link-account");
+              button.style.display = "none";
+              const pre = document.getElementById("response");
+              pre.style.background = "#F6F6F6";
+              response.then(function (text) {
+                pre.textContent = text;
+              });
+            });
+          }
+        },
+        onExit: (error, metadata) => {
+          console.log(error, metadata);
+        },
+      });
+
+      // Start Link when button is clicked
+      const linkAccountButton = document.getElementById("link-account");
+      linkAccountButton.addEventListener("click", (event) => {
+        handler.open();
+      });
+    })(jQuery);
+  </script>
+</html>

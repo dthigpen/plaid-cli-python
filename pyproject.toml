@@ -1,0 +1,14 @@
+[project]
+name = "plaid-cpi-python"
+version = "0.1.0"
+authors = [{ name = "David Thigpen", email = "davidthigs@gmail.com" }]
+description = "A CLI for the Plaid API"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    'Flask==3.0.0',
+    'plaid-python==17.0.0',
+]
+
+[tool.setuptools.package-data]
+plaid_cli_python = ["*.html"]
