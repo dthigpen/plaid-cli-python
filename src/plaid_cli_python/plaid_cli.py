@@ -13,16 +13,11 @@ from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
-
-from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
-from plaid.model.transactions_get_request import TransactionsGetRequest
-from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
-import plaid
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from flask import Flask
 from flask import request
-from flask import send_file
 
 DEFAULT_APP_DIR = Path.home() / ".plaid-cli-python"
 DEFAULT_APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,11 +35,16 @@ DEFAULT_DATA = {
     "items": [],
     "token_aliases": {},
     "item_aliases": {},
-    "aliases": {}
+    "aliases": {},
 }
 
 from importlib.resources import files
-home_html_template_text = files('plaid_cli_python.templates').joinpath('home.html').read_text()
+
+home_html_template_text = (
+    files("plaid_cli_python.templates").joinpath("home.html").read_text()
+)
+
+
 def __merge(source, destination):
     for key, value in source.items():
         if isinstance(value, dict):
@@ -70,57 +70,26 @@ def write_json_file(config_path: Path, content: dict):
     config_path.write_text(json.dumps(content, indent=True, sort_keys=True))
 
 
-def env_lookup(config: dict):
-    env = config["PLAID_ENV"]
-    if env == "sandbox":
+def get_plaid_env(env_str: str):
+    if env_str == "sandbox":
         return plaid.Environment.Sandbox
-    if env == "development":
+    if env_str == "development":
         return plaid.Environment.Development
-    if env == "production":
+    if env_str == "production":
         return plaid.Environment.Production
-    raise Exception(
+    raise ValueError(
         "Expected one of [sandbox|development|production] as an environment."
     )
 
 
-def init_client(config: dict):
-    configuration = plaid.Configuration(
-        host=env_lookup(config),
-        api_key={
-            "clientId": config["PLAID_CLIENT_ID"],
-            "secret": config["PLAID_SECRET"],
-        },
-    )
-    api_client = plaid.ApiClient(configuration)
-    return plaid_api.PlaidApi(api_client)
-
-
 def open_client(config: dict):
-    envs = {
-        "development": plaid.Environment.Development,
-        "sandbox": plaid.Environment.Sandbox,
-        "production": plaid.Environment.Production,
-    }
-    plaid_env = config.get("PLAID_ENV")
-    if plaid_env not in envs.keys():
-        raise ValueError(
-            f"PLAID_ENV={plaid_env} is not a valid choice among: {envs.keys()}"
-        )
-
+    plaid_env = get_plaid_env(config.get("PLAID_ENV"))
     plaid_client_id = config.get("PLAID_CLIENT_ID")
-    if not plaid_client_id:
-        raise ValueError("PLAID_CLIENT_ID not found in environment.")
-
     plaid_secret = config.get("PLAID_SECRET")
-    if not plaid_secret:
-        raise ValueError("PLAID_SECRET not found in environment.")
-
     plaid_version = config.get("PLAID_API_VERSION")
 
-    print(f"DEBUG opening client for {plaid_env}")
-
     configuration = plaid.Configuration(
-        host=envs[plaid_env],
+        host=plaid_env,
         api_key={
             "clientId": plaid_client_id,
             "secret": plaid_secret,
@@ -128,35 +97,18 @@ def open_client(config: dict):
         },
     )
     api_client = plaid.ApiClient(configuration)
-    client = plaid_api.PlaidApi(api_client)
-    return client
+    return plaid_api.PlaidApi(api_client)
 
 
-def list_accounts(token_or_alias: str):
-    config = load_config()
-    data = load_data()
-    access_token = None
-    if token_or_alias in data['tokens']:
-        access_token = token_or_alias
-    elif token_or_alias in data['token_aliases']:
-        access_token = data['token_aliases'][token_or_alias]
+def resolve_alias(data: dict, token_or_alias: str) -> str:
+    if token_or_alias in data["tokens"]:
+        return token_or_alias
+    elif token_or_alias in data["token_aliases"]:
+        return data["token_aliases"][token_or_alias]
+    elif token_or_alias in data["item_aliases"]:
+        return data["item_aliases"][token_or_alias]
     else:
-        raise ValueError(f'Token or alias does not exist for {token_or_alias}. Run with args "link <alias>" to create a new token/ and alias')
-    client = open_client(config)
-    request = AccountsGetRequest(access_token=access_token)
-    response = client.accounts_get(request)
-    accounts = response["accounts"]
-
-    print("Account:Subaccount\tAccountName\tAcctNum\tAcctID")
-    for a in accounts:
-        print(
-            "%s:%s\t%s\t%s\t%s"
-            % (a["type"], a["subtype"], a["name"], a["mask"], a["account_id"])
-        )
-
-
-def run():
-    pass
+        raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
 
 
 def save_data(data: dict, path: Path = None):
@@ -182,16 +134,18 @@ def load_config(path: Path = None) -> dict:
         path = DEFAULT_APP_DIR / "config.json"
     return load_json_file(path, DEFAULT_CONFIG)
 
-def run_link_server(link_alias: str = None, new_token=False):
+
+def run_link_server(
+    client: plaid_api.PlaidApi, link_alias: str = None, new_token=False
+):
     config = load_config()
     data = load_data()
-    if link_alias in data['tokens']:
-        raise ValueError(f'Cannot use token string as an alias')
-    existing_token = ''
-    if not new_token and link_alias in data['token_aliases']:
-        existing_token = data['token_aliases'][link_alias]
+    if link_alias in data["tokens"]:
+        raise ValueError(f"Cannot use token string as an alias")
+    existing_token = ""
+    if not new_token and link_alias in data["token_aliases"]:
+        existing_token = data["token_aliases"][link_alias]
 
-    client = init_client(config)
     app = Flask("Plaid Account Linker")
     server = Process(target=app.run, kwargs={"port": config["PORT"]})
 
@@ -199,7 +153,7 @@ def run_link_server(link_alias: str = None, new_token=False):
     def create_link():
         t = Template(home_html_template_text)
         return t.safe_substitute(existing_token=existing_token)
-    
+
     @app.route("/relink", methods=["GET"])
     def relink():
         server.terminate()
@@ -243,38 +197,89 @@ def run_link_server(link_alias: str = None, new_token=False):
             print(f"Encountered exception: {e}")
             return "Encountered an error", 500
 
-    server.start()  # to start the server
-    # time.sleep(3)
-    # server.terminate()
-    # app.run(port=config['PORT'])
+    server.start()
+
+
+def list_accounts(client: plaid_api.PlaidApi, access_token: str):
+    request = AccountsGetRequest(access_token=access_token)
+    response = client.accounts_get(request)
+    accounts = response["accounts"]
+
+    print("Account:Subaccount\tAccountName\tAcctNum\tAcctID")
+    for a in accounts:
+        print(
+            "%s:%s\t%s\t%s\t%s"
+            % (a["type"], a["subtype"], a["name"], a["mask"], a["account_id"])
+        )
+
+
+def list_transactions(client: plaid_api.PlaidApi, access_token: str):
+    request = TransactionsSyncRequest(
+        access_token=access_token,
+    )
+    response = client.transactions_sync(request)
+    response = json.loads(json.dumps(response.to_dict(), default=str))
+    transactions = response["added"]
+
+    # the transactions in the response are paginated, so make multiple calls while incrementing the cursor to
+    # retrieve all transactions
+    while response["has_more"]:
+        request = TransactionsSyncRequest(
+            access_token=access_token, cursor=response["next_cursor"]
+        )
+        response = client.transactions_sync(request)
+        response = json.loads(json.dumps(response.to_dict(), default=str))
+        transactions += response["added"]
+    print(json.dumps(transactions))
+
 
 def add_alias(item_id: str, alias_name: str):
     data = load_data()
-    data['aliases'][alias_name] = item_id
+    data["aliases"][alias_name] = item_id
     save_data(data)
+
 
 def _main():
     parser = argparse.ArgumentParser("A command line interface for the Plaid API")
     subparsers = parser.add_subparsers(dest="command")
     link_parser = subparsers.add_parser("link")
     link_parser.add_argument("alias", type=str, help="Alias for this institution")
-    link_parser.add_argument("-f","--force", action='store_true', help="Force a new token instead of refreshing the existing token")
-    
-    accounts_parser = subparsers.add_parser("accounts")
-    accounts_parser.add_argument('token_or_alias')
+    link_parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force a new token instead of refreshing the existing token",
+    )
 
-    alias_parser = subparsers.add_parser('alias')
-    alias_parser.add_argument('item_id', type=str, help='The item id you want to add an alias for')
-    alias_parser.add_argument('name', type=str, help='The alias you want to refer to the item id with')
+    accounts_parser = subparsers.add_parser("accounts")
+    accounts_parser.add_argument("token_or_alias")
+
+    transactions_parser = subparsers.add_parser("transactions")
+    transactions_parser.add_argument("token_or_alias")
+
+    alias_parser = subparsers.add_parser("alias")
+    alias_parser.add_argument(
+        "item_id", type=str, help="The item id you want to add an alias for"
+    )
+    alias_parser.add_argument(
+        "name", type=str, help="The alias you want to refer to the item id with"
+    )
     args = parser.parse_args()
+    config = load_config()
+    data = load_data()
+    client = open_client(config)
     if args.command == "link":
-        run_link_server(link_alias=args.alias, new_token=args.force)
-    elif args.command == 'accounts':
-        list_accounts(args.token_or_alias)
-    elif args.command == 'alias':
+        run_link_server(client, link_alias=args.alias, new_token=args.force)
+    elif args.command == "accounts":
+        access_token = resolve_alias(data, args.token_or_alias)
+        list_accounts(client, access_token)
+    elif args.command == "transactions":
+        access_token = resolve_alias(data, args.token_or_alias)
+        list_transactions(client, access_token)
+    elif args.command == "alias":
         add_alias(args.item_id, args.name)
     else:
-        raise ValueError(f'Unsupported command: {args.command}')
+        raise ValueError(f"Unsupported command: {args.command}")
 
 
 if __name__ == "__main__":

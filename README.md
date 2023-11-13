@@ -31,5 +31,13 @@ python -m plaid-cli-python link my-bank
 View accounts for a linked institution
 
 ```
-python -m plaid-cli-python accounts my-bank
+$ python -m plaid-cli-python accounts my-bank
+Account:Subaccount      AccountName     AcctNum AcctID
+depository:checking     Plaid Checking  0000    <long-account-id>
+```
+
+Add an alias for an item, such as an account-id
+
+```
+python -m plaid-cli-python alias <long-account-id> chase_checking
 ```
