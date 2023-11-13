@@ -1,23 +1,10 @@
 import argparse
 import json
-from string import Template
 from pathlib import Path
-from multiprocessing import Process
+from typing import Iterable
 
 import plaid
 from plaid.api import plaid_api
-from plaid.model.item_public_token_exchange_request import (
-    ItemPublicTokenExchangeRequest,
-)
-from plaid.model.link_token_create_request import LinkTokenCreateRequest
-from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-from plaid.model.products import Products
-from plaid.model.country_code import CountryCode
-from plaid.model.accounts_get_request import AccountsGetRequest
-from plaid.model.transactions_sync_request import TransactionsSyncRequest
-
-from flask import Flask
-from flask import request
 
 from importlib.resources import files
 
@@ -25,11 +12,19 @@ from .settings import (
     load_config,
     load_data,
     save_data,
-    DEFAULT_APP_DIR
 )
+from .linker import run_link_server
+
+from .api import list_accounts, list_transactions
+
 home_html_template_text = (
     files("plaid_cli_python.templates").joinpath("home.html").read_text()
 )
+
+import tabulate
+
+output_format = "tabular"
+
 
 def get_plaid_env(env_str: str):
     if env_str == "sandbox":
@@ -72,102 +67,12 @@ def resolve_alias(data: dict, token_or_alias: str) -> str:
         raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
 
 
-def run_link_server(
-    client: plaid_api.PlaidApi, link_alias: str = None, new_token=False
-):
-    config = load_config()
-    data = load_data()
-    if link_alias in data["tokens"]:
-        raise ValueError(f"Cannot use token string as an alias")
-    existing_token = ""
-    if not new_token and link_alias in data["token_aliases"]:
-        existing_token = data["token_aliases"][link_alias]
-
-    app = Flask("Plaid Account Linker")
-    server = Process(target=app.run, kwargs={"port": config["PORT"]})
-
-    @app.route("/", methods=["GET"])
-    def create_link():
-        t = Template(home_html_template_text)
-        return t.safe_substitute(existing_token=existing_token)
-
-    @app.route("/relink", methods=["GET"])
-    def relink():
-        server.terminate()
-
-    @app.route("/api/exchange-public-token", methods=["POST"])
-    def exchange_public_token():
-        exchange_request = ItemPublicTokenExchangeRequest(
-            public_token=request.json["public_token"]
-        )
-        exchange_response = client.item_public_token_exchange(exchange_request)
-        access_token = exchange_response["access_token"]
-        data["tokens"].append(access_token)
-        if link_alias:
-            data["token_aliases"][link_alias] = access_token
-
-        save_data(data)
-        server.terminate()  # to terminate the server
-        return f"Access token written to: {DEFAULT_APP_DIR / 'data.json'}"
-
-    @app.route("/api/create-link-token", methods=["GET"])
-    def create_link_token():
-        print("HIT /api/create-link-token")
-        redirect_uri = (
-            config["PLAID_SANDBOX_REDIRECT_URI"]
-            if "PLAID_SANDBOX_REDIRECT_URI" in config
-            else None
-        )
-        req = LinkTokenCreateRequest(
-            products=[Products("transactions")],
-            client_name="Plaid Account Linker",
-            country_codes=[CountryCode("US")],
-            language="en",
-            user=LinkTokenCreateRequestUser(client_user_id="absent-user"),
-            # redirect_uri=redirect_uri
-        )
-        try:
-            response = client.link_token_create(req)
-            print("post res")
-            return response.to_dict()
-        except Exception as e:
-            print(f"Encountered exception: {e}")
-            return "Encountered an error", 500
-
-    server.start()
-
-
-def list_accounts(client: plaid_api.PlaidApi, access_token: str):
-    request = AccountsGetRequest(access_token=access_token)
-    response = client.accounts_get(request)
-    accounts = response["accounts"]
-
-    print("Account:Subaccount\tAccountName\tAcctNum\tAcctID")
-    for a in accounts:
-        print(
-            "%s:%s\t%s\t%s\t%s"
-            % (a["type"], a["subtype"], a["name"], a["mask"], a["account_id"])
-        )
-
-
-def list_transactions(client: plaid_api.PlaidApi, access_token: str):
-    request = TransactionsSyncRequest(
-        access_token=access_token,
-    )
-    response = client.transactions_sync(request)
-    response = json.loads(json.dumps(response.to_dict(), default=str))
-    transactions = response["added"]
-
-    # the transactions in the response are paginated, so make multiple calls while incrementing the cursor to
-    # retrieve all transactions
-    while response["has_more"]:
-        request = TransactionsSyncRequest(
-            access_token=access_token, cursor=response["next_cursor"]
-        )
-        response = client.transactions_sync(request)
-        response = json.loads(json.dumps(response.to_dict(), default=str))
-        transactions += response["added"]
-    print(json.dumps(transactions))
+def output_data(data: dict, keys: Iterable):
+    rows = map(lambda t: (t[k] for k in keys), data)
+    if output_format == "table" or output_format == "tabular":
+        print(tabulate.tabulate(rows, keys))
+    else:
+        raise ValueError(f"Operation not supported: {output_format}")
 
 
 def add_alias(item_id: str, alias_name: str):
@@ -176,8 +81,27 @@ def add_alias(item_id: str, alias_name: str):
     save_data(data)
 
 
+def output_accounts(client: plaid_api.PlaidApi, access_token: str):
+    accounts = list_accounts(client, access_token)
+    header = ("type", "subtype", "name", "account_id")
+    output_data(accounts, header)
+
+
+def output_transactions(client: plaid_api.PlaidApi, access_token: str):
+    transactions = list_transactions(client, access_token)
+
+    header = ("date", "amount", "name", "pending")
+    output_data(transactions, header)
+
+
 def _main():
     parser = argparse.ArgumentParser("A command line interface for the Plaid API")
+    parser.add_argument(
+        "--output-format",
+        type=str,
+        default="tabular",
+        help='Format to output the data in, "tabular" by default. Others include csv,json',
+    )
     subparsers = parser.add_subparsers(dest="command")
     link_parser = subparsers.add_parser("link")
     link_parser.add_argument("alias", type=str, help="Alias for this institution")
@@ -202,6 +126,9 @@ def _main():
         "name", type=str, help="The alias you want to refer to the item id with"
     )
     args = parser.parse_args()
+    # could get rid of global by passing output options as arg
+    global output_format
+    output_format = args.output_format
     config = load_config()
     data = load_data()
     client = open_client(config)
@@ -209,10 +136,10 @@ def _main():
         run_link_server(client, link_alias=args.alias, new_token=args.force)
     elif args.command == "accounts":
         access_token = resolve_alias(data, args.token_or_alias)
-        list_accounts(client, access_token)
+        output_accounts(client, access_token)
     elif args.command == "transactions":
         access_token = resolve_alias(data, args.token_or_alias)
-        list_transactions(client, access_token)
+        output_transactions(client, access_token)
     elif args.command == "alias":
         add_alias(args.item_id, args.name)
     else:
