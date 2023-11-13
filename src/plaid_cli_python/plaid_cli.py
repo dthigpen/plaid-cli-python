@@ -19,56 +19,17 @@ from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from flask import Flask
 from flask import request
 
-DEFAULT_APP_DIR = Path.home() / ".plaid-cli-python"
-DEFAULT_APP_DIR.mkdir(parents=True, exist_ok=True)
-DEFAULT_CONFIG = {
-    "PORT": 8080,
-    "PLAID_ENV": "sandbox",
-    "PLAID_CLIENT_ID": None,
-    "PLAID_SECRET": None,
-    "PLAID_SANDBOX_REDIRECT_URI": None,
-    "PLAID_API_VERSION": "2020-09-14",
-}
-
-DEFAULT_DATA = {
-    "tokens": [],
-    "items": [],
-    "token_aliases": {},
-    "item_aliases": {},
-    "aliases": {},
-}
-
 from importlib.resources import files
 
+from .settings import (
+    load_config,
+    load_data,
+    save_data,
+    DEFAULT_APP_DIR
+)
 home_html_template_text = (
     files("plaid_cli_python.templates").joinpath("home.html").read_text()
 )
-
-
-def __merge(source, destination):
-    for key, value in source.items():
-        if isinstance(value, dict):
-            # get node or create one
-            node = destination.setdefault(key, {})
-            __merge(value, node)
-        else:
-            destination[key] = value
-
-    return destination
-
-
-def load_json_file(config_path: Path, default_json: dict) -> dict:
-    config = default_json.copy()
-    if config_path.is_file():
-        with open(config_path) as f:
-            config = __merge(json.load(f), config)
-    return config
-
-
-def write_json_file(config_path: Path, content: dict):
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(content, indent=True, sort_keys=True))
-
 
 def get_plaid_env(env_str: str):
     if env_str == "sandbox":
@@ -109,30 +70,6 @@ def resolve_alias(data: dict, token_or_alias: str) -> str:
         return data["item_aliases"][token_or_alias]
     else:
         raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
-
-
-def save_data(data: dict, path: Path = None):
-    if not path:
-        path = DEFAULT_APP_DIR / "data.json"
-    write_json_file(path, data)
-
-
-def load_data(path: Path = None) -> dict:
-    if not path:
-        path = DEFAULT_APP_DIR / "data.json"
-    return load_json_file(path, DEFAULT_DATA)
-
-
-def save_config(config: dict, path: Path = None):
-    if not path:
-        path = DEFAULT_APP_DIR / "config.json"
-    write_json_file(path, config)
-
-
-def load_config(path: Path = None) -> dict:
-    if not path:
-        path = DEFAULT_APP_DIR / "config.json"
-    return load_json_file(path, DEFAULT_CONFIG)
 
 
 def run_link_server(

@@ -10,14 +10,12 @@ Install the Python package
 pip install git+https://github.com/dthigpen/plaid-cli-python
 ```
 
-Setup your Plaid variables by creating the following config file at `~/.plaid-cli-python/config.json`
+Setup your Plaid variables by creating a `.env` file in your working directory or at `~/.plaid-cli-python/.env`
 
-```json
-{
-  "PLAID_ENV": "sandbox",
-  "PLAID_CLIENT_ID": "<your-client-id>",
-  "PLAID_SECRET": "<your-secret",
-}
+```env
+PLAID_ENV="sandbox"
+PLAID_CLIENT_ID="<your-client-id>"
+PLAID_SECRET="<your-secret"
 ```
 
 ## Usage
@@ -40,4 +38,10 @@ Add an alias for an item, such as an account-id
 
 ```
 python -m plaid-cli-python alias <long-account-id> chase_checking
+```
+
+View transactions for a given account
+
+```
+python -m plaid-cli-python transactions chase_checking
 ```
