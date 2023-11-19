@@ -16,12 +16,9 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_DATA = {
-    "tokens": [],
-    "items": [],
-    "token_aliases": {},
-    "item_aliases": {},
-    "aliases": {},
+    "links": []
 }
+
 
 # load .env values into environment variables
 # use fallback config path if necessary

@@ -1,12 +1,7 @@
 import argparse
-import json
-from pathlib import Path
 from typing import Iterable
-
 import plaid
 from plaid.api import plaid_api
-
-from importlib.resources import files
 
 from .settings import (
     load_config,
@@ -17,13 +12,10 @@ from .linker import run_link_server
 
 from .api import list_accounts, list_transactions
 
-home_html_template_text = (
-    files("plaid_cli_python.templates").joinpath("home.html").read_text()
-)
-
 import tabulate
 
-output_format = "tabular"
+OUTPUT_FORMATS = ("table", "json", "csv")
+output_format = "table"
 
 
 def get_plaid_env(env_str: str):
@@ -57,27 +49,63 @@ def open_client(config: dict):
 
 
 def resolve_alias(data: dict, token_or_alias: str) -> str:
-    if token_or_alias in data["tokens"]:
-        return token_or_alias
-    elif token_or_alias in data["token_aliases"]:
-        return data["token_aliases"][token_or_alias]
-    elif token_or_alias in data["item_aliases"]:
-        return data["item_aliases"][token_or_alias]
+    links = data["links"]
+    matching_link = next(
+        (
+            l
+            for l in links
+            if l["access_token"] == token_or_alias
+            or l.get("alias", None) == token_or_alias
+        ),
+        None,
+    )
+    if matching_link:
+        return matching_link["access_token"]
     else:
         raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
 
 
-def output_data(data: dict, keys: Iterable):
-    rows = map(lambda t: (t[k] for k in keys), data)
-    if output_format == "table" or output_format == "tabular":
+def get_link_data(data: dict, token_or_alias: str) -> str:
+    links = data["links"]
+    matching_link = next(
+        (
+            l
+            for l in links
+            if l["access_token"] == token_or_alias
+            or l.get("alias", None) == token_or_alias
+        ),
+        None,
+    )
+    if matching_link:
+        return matching_link
+    else:
+        raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
+
+
+def output_data(data: list, keys: Iterable, default=None):
+    rows = map(lambda t: (t.get(k, default) for k in keys), data)
+    if output_format == "table":
         print(tabulate.tabulate(rows, keys))
     else:
         raise ValueError(f"Operation not supported: {output_format}")
 
 
-def add_alias(item_id: str, alias_name: str):
-    data = load_data()
-    data["aliases"][alias_name] = item_id
+def add_alias(data: dict, item_id: str, alias_name: str):
+    found = False
+    for link in data["links"]:
+        if link["access_token"] == item_id:
+            link["alias"] = alias_name
+            found = True
+            print(f'Adding alias "{item_id}" for token {item_id}')
+            break
+        for account in link.get("accounts", []):
+            if account["id"] == item_id:
+                account["alias"] = alias_name
+                print(f'Adding alias "{item_id}" for account {item_id}')
+                found = True
+                break
+    if not found:
+        raise ValueError(f"Could not find item with id: {item_id}")
     save_data(data)
 
 
@@ -94,15 +122,22 @@ def output_transactions(client: plaid_api.PlaidApi, access_token: str):
     output_data(transactions, header)
 
 
+def output_links(links: list[dict]):
+    header = ("access_token", "alias")
+    output_data(links, header)
+
+
 def _main():
     parser = argparse.ArgumentParser("A command line interface for the Plaid API")
     parser.add_argument(
+        "-o",
         "--output-format",
         type=str,
-        default="tabular",
-        help='Format to output the data in, "tabular" by default. Others include csv,json',
+        default="table",
+        help=f'Format to output the data in, "table" by default. {OUTPUT_FORMATS}',
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    # for linking institutions
     link_parser = subparsers.add_parser("link")
     link_parser.add_argument("alias", type=str, help="Alias for this institution")
     link_parser.add_argument(
@@ -111,13 +146,15 @@ def _main():
         action="store_true",
         help="Force a new token instead of refreshing the existing token",
     )
-
+    # for printing all linked institutions
+    links_parser = subparsers.add_parser("links")
+    # for account details
     accounts_parser = subparsers.add_parser("accounts")
     accounts_parser.add_argument("token_or_alias")
-
+    # for transactions
     transactions_parser = subparsers.add_parser("transactions")
     transactions_parser.add_argument("token_or_alias")
-
+    # for adding aliases
     alias_parser = subparsers.add_parser("alias")
     alias_parser.add_argument(
         "item_id", type=str, help="The item id you want to add an alias for"
@@ -125,6 +162,7 @@ def _main():
     alias_parser.add_argument(
         "name", type=str, help="The alias you want to refer to the item id with"
     )
+    
     args = parser.parse_args()
     # could get rid of global by passing output options as arg
     global output_format
@@ -134,14 +172,16 @@ def _main():
     client = open_client(config)
     if args.command == "link":
         run_link_server(client, link_alias=args.alias, new_token=args.force)
+    elif args.command == "links":
+        output_links(data["links"])
     elif args.command == "accounts":
-        access_token = resolve_alias(data, args.token_or_alias)
-        output_accounts(client, access_token)
+        link_data = get_link_data(data, args.token_or_alias)
+        output_accounts(client, link_data["access_token"])
     elif args.command == "transactions":
-        access_token = resolve_alias(data, args.token_or_alias)
-        output_transactions(client, access_token)
+        link_data = get_link_data(data, args.token_or_alias)
+        output_transactions(client, link_data["access_token"])
     elif args.command == "alias":
-        add_alias(args.item_id, args.name)
+        add_alias(data, args.item_id, args.name)
     else:
         raise ValueError(f"Unsupported command: {args.command}")
 
