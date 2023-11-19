@@ -3,9 +3,10 @@ from dotenv import load_dotenv, find_dotenv
 import json
 from pathlib import Path
 import copy
+
 DEFAULT_APP_DIR = Path.home() / ".plaid-cli-python"
 DEFAULT_APP_DIR.mkdir(parents=True, exist_ok=True)
-DEFAULT_CONFIG_PATH = DEFAULT_APP_DIR / '.env'
+DEFAULT_CONFIG_PATH = DEFAULT_APP_DIR / ".env"
 DEFAULT_CONFIG = {
     "PORT": 8080,
     "PLAID_ENV": "sandbox",
@@ -15,9 +16,7 @@ DEFAULT_CONFIG = {
     "PLAID_API_VERSION": "2020-09-14",
 }
 
-DEFAULT_DATA = {
-    "links": []
-}
+DEFAULT_DATA = {"links": []}
 
 
 # load .env values into environment variables
@@ -28,13 +27,13 @@ if not env_path and DEFAULT_CONFIG_PATH.is_file():
 load_dotenv(env_path)
 
 
-
 def load_config() -> dict:
     config = copy.deepcopy(DEFAULT_CONFIG)
     for key in config:
         if (val := os.getenv(key)) is not None:
             config[key] = val
     return config
+
 
 def __merge(source, destination):
     for key, value in source.items():
@@ -60,6 +59,7 @@ def write_json_file(config_path: Path, content: dict):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(content, indent=True, sort_keys=True))
 
+
 def save_data(data: dict, path: Path = None):
     if not path:
         path = DEFAULT_APP_DIR / "data.json"
@@ -70,3 +70,20 @@ def load_data(path: Path = None) -> dict:
     if not path:
         path = DEFAULT_APP_DIR / "data.json"
     return load_json_file(path, DEFAULT_DATA)
+
+
+def get_link_data(data: dict, token_or_alias: str) -> str:
+    links = data["links"]
+    matching_link = next(
+        (
+            l
+            for l in links
+            if l["access_token"] == token_or_alias
+            or l.get("alias", None) == token_or_alias
+        ),
+        None,
+    )
+    if matching_link:
+        return matching_link
+    else:
+        raise ValueError(f"Token or alias does not exist for {token_or_alias}.")

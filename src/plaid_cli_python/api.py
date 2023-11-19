@@ -3,7 +3,7 @@ import plaid
 from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
-
+from plaid.model.item_remove_request import ItemRemoveRequest
 
 
 def list_accounts(client: plaid_api.PlaidApi, access_token: str) -> dict:
@@ -11,6 +11,7 @@ def list_accounts(client: plaid_api.PlaidApi, access_token: str) -> dict:
     response = client.accounts_get(request)
     accounts = response["accounts"]
     return accounts
+
 
 def list_transactions(client: plaid_api.PlaidApi, access_token: str) -> list:
     request = TransactionsSyncRequest(
@@ -30,3 +31,8 @@ def list_transactions(client: plaid_api.PlaidApi, access_token: str) -> list:
         response = json.loads(json.dumps(response.to_dict(), default=str))
         transactions += response["added"]
     return transactions
+
+
+def remove_item(client: plaid_api.PlaidApi, access_token: str):
+    request = ItemRemoveRequest(access_token=access_token)
+    client.item_remove(request)

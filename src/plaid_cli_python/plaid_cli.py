@@ -3,14 +3,10 @@ from typing import Iterable
 import plaid
 from plaid.api import plaid_api
 
-from .settings import (
-    load_config,
-    load_data,
-    save_data,
-)
+from .settings import load_config, load_data, save_data, get_link_data
 from .linker import run_link_server
 
-from .api import list_accounts, list_transactions
+from .api import list_accounts, list_transactions, remove_item
 
 import tabulate
 
@@ -65,23 +61,6 @@ def resolve_alias(data: dict, token_or_alias: str) -> str:
         raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
 
 
-def get_link_data(data: dict, token_or_alias: str) -> str:
-    links = data["links"]
-    matching_link = next(
-        (
-            l
-            for l in links
-            if l["access_token"] == token_or_alias
-            or l.get("alias", None) == token_or_alias
-        ),
-        None,
-    )
-    if matching_link:
-        return matching_link
-    else:
-        raise ValueError(f"Token or alias does not exist for {token_or_alias}.")
-
-
 def output_data(data: list, keys: Iterable, default=None):
     rows = map(lambda t: (t.get(k, default) for k in keys), data)
     if output_format == "table":
@@ -127,6 +106,15 @@ def output_links(links: list[dict]):
     output_data(links, header)
 
 
+def remove_link(client: plaid_api.PlaidApi, access_token: str):
+    data = load_data()
+    remove_item(client, access_token)
+    data["links"] = list(
+        filter(lambda l: l["access_token"] != access_token, data["links"])
+    )
+    save_data(data)
+
+
 def _main():
     parser = argparse.ArgumentParser("A command line interface for the Plaid API")
     parser.add_argument(
@@ -146,6 +134,9 @@ def _main():
         action="store_true",
         help="Force a new token instead of refreshing the existing token",
     )
+    # for removing a linked institution
+    unlink_parser = subparsers.add_parser("unlink")
+    unlink_parser.add_argument("token_or_alias")
     # for printing all linked institutions
     links_parser = subparsers.add_parser("links")
     # for account details
@@ -162,7 +153,7 @@ def _main():
     alias_parser.add_argument(
         "name", type=str, help="The alias you want to refer to the item id with"
     )
-    
+
     args = parser.parse_args()
     # could get rid of global by passing output options as arg
     global output_format
@@ -174,6 +165,9 @@ def _main():
         run_link_server(client, link_alias=args.alias, new_token=args.force)
     elif args.command == "links":
         output_links(data["links"])
+    elif args.command == "unlink":
+        link_data = get_link_data(data, args.token_or_alias)
+        remove_link(client, link_data["access_token"])
     elif args.command == "accounts":
         link_data = get_link_data(data, args.token_or_alias)
         output_accounts(client, link_data["access_token"])

@@ -21,12 +21,8 @@ from flask import request
 
 from importlib.resources import files
 
-from .settings import (
-    load_config,
-    load_data,
-    save_data,
-    DEFAULT_APP_DIR
-)
+from .settings import load_config, load_data, save_data, DEFAULT_APP_DIR, get_link_data
+
 home_html_template_text = (
     files("plaid_cli_python.templates").joinpath("home.html").read_text()
 )
@@ -37,11 +33,15 @@ def run_link_server(
 ):
     config = load_config()
     data = load_data()
-    if link_alias in data["tokens"]:
-        raise ValueError(f"Cannot use token string as an alias")
     existing_token = ""
-    if not new_token and link_alias in data["token_aliases"]:
-        existing_token = data["token_aliases"][link_alias]
+
+    if not new_token:
+        try:
+            link_data = get_link_data(data, link_alias)
+            existing_token = link_data["access_token"]
+        except ValueError as e:
+            if "Token or alias does not exist" not in str(e):
+                raise e
 
     app = Flask("Plaid Account Linker")
     server = Process(target=app.run, kwargs={"port": config["PORT"]})
@@ -62,10 +62,14 @@ def run_link_server(
         )
         exchange_response = client.item_public_token_exchange(exchange_request)
         access_token = exchange_response["access_token"]
-        data["tokens"].append(access_token)
-        if link_alias:
-            data["token_aliases"][link_alias] = access_token
+        # update existing
+        if existing_token:
+            existing_link_data = get_link_data(data, existing_token)
+            existing_link_data["access_token"] = access_token
+            existing_link_data["alias"] = link_alias
 
+        else:
+            data["links"].append({"access_token": access_token, "alias": link_alias})
         save_data(data)
         server.terminate()  # to terminate the server
         return f"Access token written to: {DEFAULT_APP_DIR / 'data.json'}"
@@ -95,4 +99,3 @@ def run_link_server(
             return "Encountered an error", 500
 
     server.start()
-
