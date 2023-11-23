@@ -78,8 +78,8 @@ def run_link_server(
     def create_link_token():
         print("HIT /api/create-link-token")
         redirect_uri = (
-            config["PLAID_SANDBOX_REDIRECT_URI"]
-            if "PLAID_SANDBOX_REDIRECT_URI" in config
+            config["PLAID_REDIRECT_URI"]
+            if "PLAID_REDIRECT_URI" in config
             else None
         )
         req = LinkTokenCreateRequest(

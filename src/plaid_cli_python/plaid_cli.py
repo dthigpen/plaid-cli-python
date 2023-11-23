@@ -1,5 +1,7 @@
 import argparse
 from typing import Iterable
+from datetime import datetime
+
 import plaid
 from plaid.api import plaid_api
 
@@ -9,6 +11,7 @@ from .linker import run_link_server
 from .api import list_accounts, list_transactions, remove_item
 
 import tabulate
+from datetime import date
 
 OUTPUT_FORMATS = ("table", "json", "csv")
 output_format = "table"
@@ -94,8 +97,8 @@ def output_accounts(client: plaid_api.PlaidApi, access_token: str):
     output_data(accounts, header)
 
 
-def output_transactions(client: plaid_api.PlaidApi, access_token: str):
-    transactions = list_transactions(client, access_token)
+def output_transactions(client: plaid_api.PlaidApi, access_token: str, start=None, end=None):
+    transactions = list_transactions(client, access_token, start=start, end=end)
 
     header = ("date", "amount", "name", "pending")
     output_data(transactions, header)
@@ -114,7 +117,11 @@ def remove_link(client: plaid_api.PlaidApi, access_token: str):
     )
     save_data(data)
 
-
+def parse_datetime_str(datetime_str: str):
+    if datetime_str == "now":
+        return datetime.today()
+    return date.fromisoformat(datetime_str)
+    
 def _main():
     parser = argparse.ArgumentParser("A command line interface for the Plaid API")
     parser.add_argument(
@@ -145,7 +152,9 @@ def _main():
     # for transactions
     transactions_parser = subparsers.add_parser("transactions")
     transactions_parser.add_argument("token_or_alias")
+    transactions_parser.add_argument("--start", type=parse_datetime_str, help="start date of transaction history in YYYY-MM-DD format")
     # for adding aliases
+    transactions_parser.add_argument("--end",type=parse_datetime_str, help="the end date of thr transaction history")
     alias_parser = subparsers.add_parser("alias")
     alias_parser.add_argument(
         "item_id", type=str, help="The item id you want to add an alias for"
@@ -173,7 +182,7 @@ def _main():
         output_accounts(client, link_data["access_token"])
     elif args.command == "transactions":
         link_data = get_link_data(data, args.token_or_alias)
-        output_transactions(client, link_data["access_token"])
+        output_transactions(client, link_data["access_token"], start=args.start, end=args.end)
     elif args.command == "alias":
         add_alias(data, args.item_id, args.name)
     else:
