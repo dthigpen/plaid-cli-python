@@ -1,4 +1,6 @@
 import argparse
+import csv
+import sys
 from typing import Iterable
 from datetime import datetime
 
@@ -68,6 +70,11 @@ def output_data(data: list, keys: Iterable, default=None):
     rows = map(lambda t: (t.get(k, default) for k in keys), data)
     if output_format == "table":
         print(tabulate.tabulate(rows, keys))
+    elif output_format == "csv":
+        writer = csv.DictWriter(sys.stdout, fieldnames=keys)
+        for d in data:
+            d = {k:v for k,v in d.items() if k in keys}
+            writer.writerow(d)
     else:
         raise ValueError(f"Operation not supported: {output_format}")
 
