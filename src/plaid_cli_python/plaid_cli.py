@@ -72,6 +72,7 @@ def output_data(data: list, keys: Iterable, default=None):
         print(tabulate.tabulate(rows, keys))
     elif output_format == "csv":
         writer = csv.DictWriter(sys.stdout, fieldnames=keys)
+        writer.writeheader()
         for d in data:
             d = {k:v for k,v in d.items() if k in keys}
             writer.writerow(d)
@@ -107,7 +108,7 @@ def output_accounts(client: plaid_api.PlaidApi, access_token: str):
 def output_transactions(client: plaid_api.PlaidApi, access_token: str, start=None, end=None):
     transactions = list_transactions(client, access_token, start=start, end=end)
 
-    header = ("date", "amount", "name", "pending")
+    header = ("date", "amount", "name", "category","pending")
     output_data(transactions, header)
 
 
