@@ -13,7 +13,7 @@ pip install git+https://github.com/dthigpen/plaid-cli-python
 Setup your Plaid variables by creating a `.env` file in your working directory or at `~/.plaid-cli-python/.env`
 
 ```env
-PLAID_ENV="sandbox"
+PLAID_ENV="development"
 PLAID_CLIENT_ID="<your-client-id>"
 PLAID_SECRET="<your-secret"
 ```
@@ -38,13 +38,13 @@ depository  checking   Plaid Checking  7DbD5aGADeILMKMJNJErFvVX3MlxPxF8n9jBN
 Add an alias for an item, such as an account-id
 
 ```
-plaid-cli-python alias <long-account-id> chase_checking
+plaid-cli-python alias my-bank <long-account-id> chase_checking
 ```
 
 View transactions for a given account
 
 ```
-$ plaid-cli-python transactions chase_checking
+$ plaid-cli-python transactions --account chase_checking --start 2023-10-08 --end 2023-11-30
 date          amount  name                    pending
 ----------  --------  ----------------------  ---------
 2023-11-09      6.33  Uber 072515 SF**POOL**  False

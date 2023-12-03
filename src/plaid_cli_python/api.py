@@ -13,7 +13,7 @@ def list_accounts(client: plaid_api.PlaidApi, access_token: str) -> dict:
     return accounts
 
 
-def list_transactions(client: plaid_api.PlaidApi, access_token: str,start=None, end=None) -> list:
+def list_transactions(client: plaid_api.PlaidApi, access_token: str, account:str=None, start=None, end=None) -> list:
     request = TransactionsSyncRequest(
         access_token=access_token,
     )
@@ -28,7 +28,8 @@ def list_transactions(client: plaid_api.PlaidApi, access_token: str,start=None, 
             t_date = date.fromisoformat(t["date"])
             if (end and t_date > end) or (start and  t_date < start):
                 continue
-            transactions.append(t)
+            if not account or t['account_id'] == account:
+                transactions.append(t)
         request = TransactionsSyncRequest(
             access_token=access_token, cursor=response["next_cursor"]
         )

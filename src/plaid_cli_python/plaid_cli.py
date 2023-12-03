@@ -80,22 +80,11 @@ def output_data(data: list, keys: Iterable, default=None):
         raise ValueError(f"Operation not supported: {output_format}")
 
 
-def add_alias(data: dict, item_id: str, alias_name: str):
-    found = False
-    for link in data["links"]:
-        if link["access_token"] == item_id:
-            link["alias"] = alias_name
-            found = True
-            print(f'Adding alias "{item_id}" for token {item_id}')
-            break
-        for account in link.get("accounts", []):
-            if account["id"] == item_id:
-                account["alias"] = alias_name
-                print(f'Adding alias "{item_id}" for account {item_id}')
-                found = True
-                break
-    if not found:
-        raise ValueError(f"Could not find item with id: {item_id}")
+def add_alias(data: dict, token_or_alias: str, item_id: str, alias_name: str):
+    link_data = get_link_data(data, token_or_alias)
+    aliases = link_data.get('item_aliases', {})
+    aliases[alias_name] = item_id
+    link_data['item_aliases'] = aliases
     save_data(data)
 
 
@@ -105,10 +94,10 @@ def output_accounts(client: plaid_api.PlaidApi, access_token: str):
     output_data(accounts, header)
 
 
-def output_transactions(client: plaid_api.PlaidApi, access_token: str, start=None, end=None):
-    transactions = list_transactions(client, access_token, start=start, end=end)
+def output_transactions(client: plaid_api.PlaidApi, access_token: str, account: str=None, start=None, end=None):
+    transactions = list_transactions(client, access_token, account=account, start=start, end=end)
 
-    header = ("date", "amount", "name", "category","pending")
+    header = ("date", "amount", "name","account_id", "category","pending")
     output_data(transactions, header)
 
 
@@ -160,10 +149,12 @@ def _main():
     # for transactions
     transactions_parser = subparsers.add_parser("transactions")
     transactions_parser.add_argument("token_or_alias")
+    transactions_parser.add_argument("--account", help='A specific Account ID or alias to show transactions for')
     transactions_parser.add_argument("--start", type=parse_datetime_str, help="start date of transaction history in YYYY-MM-DD format")
-    # for adding aliases
     transactions_parser.add_argument("--end",type=parse_datetime_str, help="the end date of thr transaction history")
+    # for adding aliases
     alias_parser = subparsers.add_parser("alias")
+    alias_parser.add_argument("token_or_alias", type=str)
     alias_parser.add_argument(
         "item_id", type=str, help="The item id you want to add an alias for"
     )
@@ -190,9 +181,12 @@ def _main():
         output_accounts(client, link_data["access_token"])
     elif args.command == "transactions":
         link_data = get_link_data(data, args.token_or_alias)
-        output_transactions(client, link_data["access_token"], start=args.start, end=args.end)
+        account = args.account
+        if account and account in link_data.get('item_aliases', {}):
+            account = link_data['item_aliases'][account]
+        output_transactions(client, link_data["access_token"],account=account, start=args.start, end=args.end)
     elif args.command == "alias":
-        add_alias(data, args.item_id, args.name)
+        add_alias(data, args.token_or_alias, args.item_id, args.name)
     else:
         raise ValueError(f"Unsupported command: {args.command}")
 
