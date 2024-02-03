@@ -4,6 +4,8 @@ A CLI tool for interacting with the Plaid API, inspired by https://github.com/eb
 
 ## Installation
 
+First, create a Plaid Developer account on [Plaid](https://dashboard.plaid.com/signup/).
+
 Install the Python package
 
 ```bash
@@ -44,7 +46,7 @@ plaid-cli-python alias my-bank <long-account-id> chase_checking
 View transactions for a given account
 
 ```
-$ plaid-cli-python transactions --account chase_checking --start 2023-10-08 --end 2023-11-30
+$ plaid-cli-python transactions --start 2023-10-08 --end 2023-11-30 --account chase_checking my-bank
 date          amount  name                    pending
 ----------  --------  ----------------------  ---------
 2023-11-09      6.33  Uber 072515 SF**POOL**  False
@@ -53,4 +55,9 @@ date          amount  name                    pending
 2023-10-24     12     McDonald's              False
 2023-10-24      4.33  Starbucks               False
 ...
+```
+
+View the same transactions in different formats: `table` (default), `csv`, or `json`.
+```
+plaid-cli-python -o csv transactions --start 2023-10-08 --end 2023-11-30 --account chase_checking my-bank
 ```

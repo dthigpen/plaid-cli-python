@@ -15,4 +15,4 @@ dependencies = [
 plaid-cli-python = 'plaid_cli_python.plaid_cli:_main'
 
 [tool.setuptools.package-data]
-plaid_cli_python = ["**/*.html"]
+"plaid_cli_python.templates" = ["*.html"]

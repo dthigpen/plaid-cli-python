@@ -71,6 +71,7 @@ def run_link_server(
         else:
             data["links"].append({"access_token": access_token, "alias": link_alias})
         save_data(data)
+        # TODO terminate properly
         server.terminate()  # to terminate the server
         return f"Access token written to: {DEFAULT_APP_DIR / 'data.json'}"
 
